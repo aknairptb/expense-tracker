@@ -545,14 +545,14 @@ select option { background: var(--bg-secondary); color: var(--text-primary); }
 
 /* ===== Micro-Interactions ===== */
 @media (hover: hover) {
-  .btn-primary, .btn-secondary, .btn-danger, .btn-icon, .nav-btn, .payment-chip, .chip, .page-btn, .expense-actions button {
+  .btn-primary, .btn-secondary, .btn-danger, .btn-icon, .payment-chip, .chip, .page-btn, .expense-actions button {
     transition: transform var(--spring-bounce), box-shadow var(--spring-bounce), background .2s ease, color .2s ease, border-color .2s ease !important;
     will-change: transform;
   }
-  .btn-primary:hover, .btn-secondary:hover, .btn-danger:hover, .btn-icon:hover, .nav-btn:hover, .payment-chip:hover, .chip:hover, .page-btn:hover, .expense-actions button:hover {
+  .btn-primary:hover, .btn-secondary:hover, .btn-danger:hover, .btn-icon:hover, .payment-chip:hover, .chip:hover, .page-btn:hover, .expense-actions button:hover {
     transform: scale(1.03);
   }
-  .btn-primary:active, .btn-secondary:active, .btn-danger:active, .btn-icon:active, .nav-btn:active, .payment-chip:active, .chip:active, .page-btn:active, .expense-actions button:active {
+  .btn-primary:active, .btn-secondary:active, .btn-danger:active, .btn-icon:active, .payment-chip:active, .chip:active, .page-btn:active, .expense-actions button:active {
     transform: scale(0.95);
   }
 }

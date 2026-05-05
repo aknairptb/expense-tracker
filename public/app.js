@@ -102,7 +102,8 @@ function setupNavigation() {
   const overlay = document.getElementById('sidebar-overlay');
 
   btns.forEach(btn => {
-    btn.addEventListener('click', () => {
+    const handleNavClick = (e) => {
+      e.preventDefault();
       const view = btn.dataset.view;
       btns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -113,7 +114,10 @@ function setupNavigation() {
       overlay.classList.remove('active');
       if (view === 'analytics') renderAnalytics();
       if (view === 'history') { historyPage = 1; renderHistory(); }
-    });
+    };
+    
+    btn.addEventListener('click', handleNavClick);
+    btn.addEventListener('touchstart', handleNavClick, { passive: false });
   });
 
   toggle.addEventListener('click', () => {
