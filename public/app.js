@@ -30,7 +30,6 @@ async function initApp() {
   setupHistory();
   setupConfirmModal();
   setupBudgetAlert();
-  setupSidebarOverlay();
   await loadData();
   setupCurrency();
   applyCurrency();
@@ -121,6 +120,12 @@ function setupNavigation() {
     sidebar.classList.toggle('open');
     overlay.classList.toggle('active');
   });
+  
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('active');
+  });
+
   document.getElementById('btn-view-all').addEventListener('click', () => {
     document.querySelector('[data-view="history"]').click();
   });
