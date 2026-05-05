@@ -544,13 +544,21 @@ select option { background: var(--bg-secondary); color: var(--text-primary); }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
 
 /* ===== Micro-Interactions ===== */
-.btn-primary, .btn-secondary, .btn-danger, .btn-icon, .nav-btn, .payment-chip, .chip, .page-btn, .expense-actions button {
-  transition: transform var(--spring-bounce), box-shadow var(--spring-bounce), background .2s ease, color .2s ease, border-color .2s ease !important;
-  will-change: transform;
+@media (hover: hover) {
+  .btn-primary, .btn-secondary, .btn-danger, .btn-icon, .nav-btn, .payment-chip, .chip, .page-btn, .expense-actions button {
+    transition: transform var(--spring-bounce), box-shadow var(--spring-bounce), background .2s ease, color .2s ease, border-color .2s ease !important;
+    will-change: transform;
+  }
+  .btn-primary:hover, .btn-secondary:hover, .btn-danger:hover, .btn-icon:hover, .nav-btn:hover, .payment-chip:hover, .chip:hover, .page-btn:hover, .expense-actions button:hover {
+    transform: scale(1.03);
+  }
+  .btn-primary:active, .btn-secondary:active, .btn-danger:active, .btn-icon:active, .nav-btn:active, .payment-chip:active, .chip:active, .page-btn:active, .expense-actions button:active {
+    transform: scale(0.95);
+  }
 }
-.btn-primary:hover, .btn-secondary:hover, .btn-danger:hover, .btn-icon:hover, .nav-btn:hover, .payment-chip:hover, .chip:hover, .page-btn:hover, .expense-actions button:hover {
-  transform: scale(1.03);
-}
-.btn-primary:active, .btn-secondary:active, .btn-danger:active, .btn-icon:active, .nav-btn:active, .payment-chip:active, .chip:active, .page-btn:active, .expense-actions button:active {
-  transform: scale(0.95);
+/* Mobile safe tap states */
+@media (hover: none) {
+  .btn-primary:active, .btn-secondary:active, .btn-danger:active, .btn-icon:active, .nav-btn:active, .payment-chip:active, .chip:active, .page-btn:active {
+    opacity: 0.7;
+  }
 }
