@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { Pool } = require('pg');
-const jwt = require('jsonwebtoken');
+const { createClient } = require('@supabase/supabase-js');
 
 const PORT = process.env.PORT || 3000;
 
@@ -67,18 +67,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ===== Supabase Client =====
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.VITE_SUPABASE_ANON_KEY || 'placeholder'
+);
+
 // ===== Auth Middleware =====
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) return res.status(401).json({ error: 'Unauthorized: No token provided' });
 
-  jwt.verify(token, process.env.SUPABASE_JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Forbidden: Invalid token' });
-    req.user = user; // Supabase JWT payload contains 'sub' as user_id
-    next();
-  });
+  // Use Supabase native token validation which supports ECC (P-256) keys natively
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  
+  if (error || !user) {
+    return res.status(403).json({ error: 'Forbidden: Invalid or expired token' });
+  }
+  
+  req.user = { sub: user.id };
+  next();
 };
 
 // ===== Public API Routes =====
