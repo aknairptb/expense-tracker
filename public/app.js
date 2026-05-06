@@ -20,6 +20,13 @@ const CATEGORY_COLORS = {
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
+  
+  // Register Service Worker for PWA
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(err => {
+      console.log('SW registration failed:', err);
+    });
+  }
 });
 
 async function initApp() {
