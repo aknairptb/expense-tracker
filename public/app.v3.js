@@ -79,13 +79,22 @@ async function setupAuth() {
   document.getElementById('btn-signup').addEventListener('click', async (e) => {
     e.preventDefault();
     errorDiv.textContent = ''; msgDiv.textContent = '';
-    if (!supabase) return errorDiv.textContent = 'System Error: Supabase is not connected. Please check API keys.';
+    if (!supabase) return alert('System Error: Supabase is not connected.');
+    
+    e.target.textContent = 'Creating...';
     try {
       const { error, data } = await supabase.auth.signUp({ email: emailInput.value, password: passInput.value });
-      if (error) errorDiv.textContent = error.message;
-      else if (data.user && data.user.identities.length === 0) errorDiv.textContent = "Account already exists.";
-      else msgDiv.textContent = "Success! Please check your email for a confirmation link.";
-    } catch (err) { errorDiv.textContent = err.message; }
+      if (error) alert("Error: " + error.message);
+      else if (data.user && data.user.identities && data.user.identities.length === 0) alert("Account already exists.");
+      else {
+        alert("Success! Check your email for a confirmation link. If you don't use real email, disable email confirmation in Supabase.");
+        msgDiv.textContent = "Success! Please check your email.";
+      }
+    } catch (err) { 
+      alert("Network Error: " + err.message); 
+    } finally {
+      e.target.textContent = 'Create Account';
+    }
   });
 
   document.getElementById('btn-signout').addEventListener('click', async () => {
