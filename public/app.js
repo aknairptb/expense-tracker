@@ -69,17 +69,23 @@ async function setupAuth() {
   document.getElementById('btn-login').addEventListener('click', async (e) => {
     e.preventDefault();
     errorDiv.textContent = ''; msgDiv.textContent = '';
-    const { error } = await supabase.auth.signInWithPassword({ email: emailInput.value, password: passInput.value });
-    if (error) errorDiv.textContent = error.message;
+    if (!supabase) return errorDiv.textContent = 'System Error: Supabase is not connected. Please check API keys.';
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: emailInput.value, password: passInput.value });
+      if (error) errorDiv.textContent = error.message;
+    } catch (err) { errorDiv.textContent = err.message; }
   });
 
   document.getElementById('btn-signup').addEventListener('click', async (e) => {
     e.preventDefault();
     errorDiv.textContent = ''; msgDiv.textContent = '';
-    const { error, data } = await supabase.auth.signUp({ email: emailInput.value, password: passInput.value });
-    if (error) errorDiv.textContent = error.message;
-    else if (data.user && data.user.identities.length === 0) errorDiv.textContent = "Account already exists.";
-    else msgDiv.textContent = "Success! Please check your email for a confirmation link.";
+    if (!supabase) return errorDiv.textContent = 'System Error: Supabase is not connected. Please check API keys.';
+    try {
+      const { error, data } = await supabase.auth.signUp({ email: emailInput.value, password: passInput.value });
+      if (error) errorDiv.textContent = error.message;
+      else if (data.user && data.user.identities.length === 0) errorDiv.textContent = "Account already exists.";
+      else msgDiv.textContent = "Success! Please check your email for a confirmation link.";
+    } catch (err) { errorDiv.textContent = err.message; }
   });
 
   document.getElementById('btn-signout').addEventListener('click', async () => {
