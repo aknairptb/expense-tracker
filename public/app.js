@@ -29,7 +29,82 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ===== Supabase Auth =====
+let supabase = null;
+let supabaseSession = null;
+
+async function setupAuth() {
+  try {
+    const res = await fetch(`${API}/config`);
+    const config = await res.json();
+    supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+    
+    const { data } = await supabase.auth.getSession();
+    supabaseSession = data.session;
+    
+    supabase.auth.onAuthStateChange((event, session) => {
+      supabaseSession = session;
+      if (session) {
+        document.getElementById('auth-screen').classList.add('hidden');
+        loadData().then(renderAll);
+      } else {
+        document.getElementById('auth-screen').classList.remove('hidden');
+      }
+    });
+
+    if (!supabaseSession) {
+      document.getElementById('auth-screen').classList.remove('hidden');
+    } else {
+      document.getElementById('auth-screen').classList.add('hidden');
+    }
+  } catch (err) {
+    console.error("Auth init failed:", err);
+  }
+
+  const emailInput = document.getElementById('auth-email');
+  const passInput = document.getElementById('auth-password');
+  const errorDiv = document.getElementById('auth-error');
+  const msgDiv = document.getElementById('auth-message');
+
+  document.getElementById('btn-login').addEventListener('click', async (e) => {
+    e.preventDefault();
+    errorDiv.textContent = ''; msgDiv.textContent = '';
+    const { error } = await supabase.auth.signInWithPassword({ email: emailInput.value, password: passInput.value });
+    if (error) errorDiv.textContent = error.message;
+  });
+
+  document.getElementById('btn-signup').addEventListener('click', async (e) => {
+    e.preventDefault();
+    errorDiv.textContent = ''; msgDiv.textContent = '';
+    const { error, data } = await supabase.auth.signUp({ email: emailInput.value, password: passInput.value });
+    if (error) errorDiv.textContent = error.message;
+    else if (data.user && data.user.identities.length === 0) errorDiv.textContent = "Account already exists.";
+    else msgDiv.textContent = "Success! Please check your email for a confirmation link.";
+  });
+
+  document.getElementById('btn-signout').addEventListener('click', async () => {
+    await supabase.auth.signOut();
+    expenses = [];
+    renderAll();
+  });
+}
+
+// Intercept fetch to add JWT
+const originalFetch = window.fetch;
+window.fetch = async function() {
+  let [resource, config] = arguments;
+  if(typeof resource === 'string' && resource.startsWith(API)) {
+    config = config || {};
+    config.headers = config.headers || {};
+    if(supabaseSession) {
+      config.headers['Authorization'] = `Bearer ${supabaseSession.access_token}`;
+    }
+  }
+  return originalFetch.apply(this, [resource, config]);
+};
+
 async function initApp() {
+  await setupAuth();
   setupDate();
   setupNavigation();
   setupForm();
@@ -37,10 +112,12 @@ async function initApp() {
   setupHistory();
   setupConfirmModal();
   setupBudgetAlert();
-  await loadData();
-  setupCurrency();
-  applyCurrency();
-  renderAll();
+  if(supabaseSession) {
+    await loadData();
+    setupCurrency();
+    applyCurrency();
+    renderAll();
+  }
 }
 
 // ===== Helpers =====

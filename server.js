@@ -3,25 +3,24 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
 
 const PORT = process.env.PORT || 3000;
 
 // ===== PostgreSQL Connection =====
-// If DATABASE_URL is not set (e.g. locally before setup), the app will crash gracefully
 if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'production') {
   console.warn("\n⚠️ WARNING: DATABASE_URL is not set in your environment variables.");
-  console.warn("⚠️ Please create a .env file with your PostgreSQL connection string to run locally.\n");
 }
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Required for cloud databases like Neon/Vercel Postgres
+  ssl: { rejectUnauthorized: false }
 });
 
 async function initDB() {
   const client = await pool.connect();
   try {
-    // Create expenses table
+    // Ensure expenses table exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS expenses (
         id VARCHAR(255) PRIMARY KEY,
@@ -34,23 +33,27 @@ async function initDB() {
         created_at VARCHAR(255) NOT NULL
       )
     `);
+    
+    // Add user_id column if missing
+    try { await client.query(`ALTER TABLE expenses ADD COLUMN user_id VARCHAR(255)`); } catch (e) {}
 
-    // Create settings table
+    // Ensure settings table exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS settings (
-        key VARCHAR(255) PRIMARY KEY,
-        value VARCHAR(255) NOT NULL
+        key VARCHAR(255),
+        value VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) DEFAULT 'default'
       )
     `);
 
-    // Insert default settings if they don't exist
-    const existing = await client.query("SELECT COUNT(*) FROM settings WHERE key='budget'");
-    if (parseInt(existing.rows[0].count) === 0) {
-      await client.query("INSERT INTO settings (key, value) VALUES ('budget', '0')");
-      await client.query("INSERT INTO settings (key, value) VALUES ('currency', '₹')");
-    }
+    // Add user_id column if missing to settings and fix primary key
+    try { await client.query(`ALTER TABLE settings ADD COLUMN user_id VARCHAR(255) DEFAULT 'default'`); } catch (e) {}
+    try { 
+      await client.query(`ALTER TABLE settings DROP CONSTRAINT IF EXISTS settings_pkey`);
+      await client.query(`ALTER TABLE settings ADD PRIMARY KEY (user_id, key)`);
+    } catch (e) {}
 
-    console.log('✓ Cloud PostgreSQL Database connected and initialized');
+    console.log('✓ Cloud PostgreSQL Database connected and initialized with Auth schema');
   } catch (err) {
     console.error('Failed to initialize database tables:', err);
   } finally {
@@ -64,12 +67,40 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== API Routes =====
+// ===== Auth Middleware =====
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: 'Unauthorized: No token provided' });
+
+  jwt.verify(token, process.env.SUPABASE_JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Forbidden: Invalid token' });
+    req.user = user; // Supabase JWT payload contains 'sub' as user_id
+    next();
+  });
+};
+
+// ===== Public API Routes =====
+// Provide frontend with Supabase public keys
+app.get('/api/config', (req, res) => {
+  res.json({
+    supabaseUrl: process.env.VITE_SUPABASE_URL,
+    supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY
+  });
+});
+
+// ===== Protected API Routes =====
+app.use('/api/expenses', authenticateToken);
+app.use('/api/settings', authenticateToken);
 
 // GET all expenses
 app.get('/api/expenses', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM expenses ORDER BY date DESC, created_at DESC');
+    // Auto-migrate orphaned records to the first user who logs in
+    await pool.query('UPDATE expenses SET user_id = $1 WHERE user_id IS NULL', [req.user.sub]);
+    
+    const result = await pool.query('SELECT * FROM expenses WHERE user_id = $1 ORDER BY date DESC, created_at DESC', [req.user.sub]);
     const rows = result.rows.map(row => ({
       id: row.id,
       amount: parseFloat(row.amount),
@@ -91,8 +122,8 @@ app.post('/api/expenses', async (req, res) => {
   const { id, amount, category, date, description, payment, recurring, createdAt } = req.body;
   try {
     await pool.query(
-      'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [id, amount, category, date, description || category, payment || '', recurring ? 1 : 0, createdAt || new Date().toISOString()]
+      'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [id, amount, category, date, description || category, payment || '', recurring ? 1 : 0, createdAt || new Date().toISOString(), req.user.sub]
     );
     res.json({ success: true, id });
   } catch (err) {
@@ -105,8 +136,8 @@ app.put('/api/expenses/:id', async (req, res) => {
   const { amount, category, date, description } = req.body;
   try {
     await pool.query(
-      'UPDATE expenses SET amount=$1, category=$2, date=$3, description=$4 WHERE id=$5',
-      [amount, category, date, description || category, req.params.id]
+      'UPDATE expenses SET amount=$1, category=$2, date=$3, description=$4 WHERE id=$5 AND user_id=$6',
+      [amount, category, date, description || category, req.params.id, req.user.sub]
     );
     res.json({ success: true });
   } catch (err) {
@@ -117,7 +148,7 @@ app.put('/api/expenses/:id', async (req, res) => {
 // DELETE expense
 app.delete('/api/expenses/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM expenses WHERE id=$1', [req.params.id]);
+    await pool.query('DELETE FROM expenses WHERE id=$1 AND user_id=$2', [req.params.id, req.user.sub]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -127,7 +158,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
 // DELETE all expenses
 app.delete('/api/expenses', async (req, res) => {
   try {
-    await pool.query('DELETE FROM expenses');
+    await pool.query('DELETE FROM expenses WHERE user_id=$1', [req.user.sub]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -142,8 +173,8 @@ app.post('/api/expenses/bulk', async (req, res) => {
   for (const e of items) {
     try {
       await pool.query(
-        'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING',
-        [e.id, e.amount, e.category, e.date, e.description || e.category, e.payment || '', e.recurring ? 1 : 0, e.createdAt || new Date().toISOString()]
+        'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING',
+        [e.id, e.amount, e.category, e.date, e.description || e.category, e.payment || '', e.recurring ? 1 : 0, e.createdAt || new Date().toISOString(), req.user.sub]
       );
       imported++;
     } catch (err) { /* skip duplicates or errors */ }
@@ -154,7 +185,7 @@ app.post('/api/expenses/bulk', async (req, res) => {
 // GET settings
 app.get('/api/settings', async (req, res) => {
   try {
-    const result = await pool.query('SELECT key, value FROM settings');
+    const result = await pool.query('SELECT key, value FROM settings WHERE user_id = $1 OR user_id = $2', [req.user.sub, 'default']);
     const settings = {};
     result.rows.forEach(row => {
       settings[row.key] = isNaN(row.value) ? row.value : Number(row.value);
@@ -171,14 +202,14 @@ app.put('/api/settings', async (req, res) => {
   try {
     if (budget !== undefined) {
       await pool.query(
-        "INSERT INTO settings (key, value) VALUES ('budget', $1) ON CONFLICT (key) DO UPDATE SET value=$1", 
-        [String(budget)]
+        "INSERT INTO settings (user_id, key, value) VALUES ($1, 'budget', $2) ON CONFLICT (user_id, key) DO UPDATE SET value=$2", 
+        [req.user.sub, String(budget)]
       );
     }
     if (currency !== undefined) {
       await pool.query(
-        "INSERT INTO settings (key, value) VALUES ('currency', $1) ON CONFLICT (key) DO UPDATE SET value=$1", 
-        [String(currency)]
+        "INSERT INTO settings (user_id, key, value) VALUES ($1, 'currency', $2) ON CONFLICT (user_id, key) DO UPDATE SET value=$2", 
+        [req.user.sub, String(currency)]
       );
     }
     res.json({ success: true });
@@ -193,8 +224,6 @@ initDB();
 // ===== Export for Vercel =====
 module.exports = app;
 
-// ===== Start Local Server =====
-// (Only runs if 'node server.js' is executed directly, not when imported by Vercel)
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`\n  ✨ Cloud-Ready ExpenseFlow server running at http://localhost:${PORT}\n`);
