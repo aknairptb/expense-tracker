@@ -78,7 +78,8 @@ body {
   font: inherit; font-size: .9rem; font-weight: 500;
   cursor: pointer; transition: all var(--transition); width: 100%; text-align: left;
 }
-@media (hover: hover) {
+.nav-btn * { pointer-events: none; }
+@media (hover: hover) and (pointer: fine) {
   .nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
 }
 .nav-btn.active {
@@ -544,7 +545,7 @@ select option { background: var(--bg-secondary); color: var(--text-primary); }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
 
 /* ===== Micro-Interactions ===== */
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .btn-primary, .btn-secondary, .btn-danger, .btn-icon, .payment-chip, .chip, .page-btn, .expense-actions button {
     transition: transform var(--spring-bounce), box-shadow var(--spring-bounce), background .2s ease, color .2s ease, border-color .2s ease !important;
     will-change: transform;
