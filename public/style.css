@@ -40,7 +40,7 @@ body {
 }
 
 /* ===== Ambient Background ===== */
-.ambient-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.ambient-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 .blob {
   position: absolute; border-radius: 50%; filter: blur(120px); opacity: .18;
   animation: blobFloat 20s ease-in-out infinite;
@@ -55,7 +55,7 @@ body {
 }
 
 /* ===== App Layout ===== */
-.app-container { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+.app-container { display: flex; min-height: 100vh; position: relative; }
 
 .sidebar {
   width: var(--sidebar-w); position: fixed; top: 0; left: 0; bottom: 0;
