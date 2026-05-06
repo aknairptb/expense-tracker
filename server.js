@@ -67,50 +67,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== Supabase Client =====
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.VITE_SUPABASE_ANON_KEY || 'placeholder'
-);
-
-// ===== Auth Middleware =====
-const authenticateToken = async (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) return res.status(401).json({ error: 'Unauthorized: No token provided' });
-
-  // Use Supabase native token validation which supports ECC (P-256) keys natively
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  
-  if (error || !user) {
-    return res.status(403).json({ error: 'Forbidden: Invalid or expired token' });
-  }
-  
-  req.user = { sub: user.id };
-  next();
-};
-
 // ===== Public API Routes =====
-// Provide frontend with Supabase public keys
-app.get('/api/config', (req, res) => {
-  res.json({
-    supabaseUrl: process.env.VITE_SUPABASE_URL,
-    supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY
-  });
-});
-
-// ===== Protected API Routes =====
-app.use('/api/expenses', authenticateToken);
-app.use('/api/settings', authenticateToken);
-
 // GET all expenses
 app.get('/api/expenses', async (req, res) => {
   try {
-    // Auto-migrate orphaned records to the first user who logs in
-    await pool.query('UPDATE expenses SET user_id = $1 WHERE user_id IS NULL', [req.user.sub]);
-    
-    const result = await pool.query('SELECT * FROM expenses WHERE user_id = $1 ORDER BY date DESC, created_at DESC', [req.user.sub]);
+    const result = await pool.query('SELECT * FROM expenses ORDER BY date DESC, created_at DESC');
     const rows = result.rows.map(row => ({
       id: row.id,
       amount: parseFloat(row.amount),
@@ -133,7 +94,7 @@ app.post('/api/expenses', async (req, res) => {
   try {
     await pool.query(
       'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-      [id, amount, category, date, description || category, payment || '', recurring ? 1 : 0, createdAt || new Date().toISOString(), req.user.sub]
+      [id, amount, category, date, description || category, payment || '', recurring ? 1 : 0, createdAt || new Date().toISOString(), 'default']
     );
     res.json({ success: true, id });
   } catch (err) {
@@ -146,8 +107,8 @@ app.put('/api/expenses/:id', async (req, res) => {
   const { amount, category, date, description } = req.body;
   try {
     await pool.query(
-      'UPDATE expenses SET amount=$1, category=$2, date=$3, description=$4 WHERE id=$5 AND user_id=$6',
-      [amount, category, date, description || category, req.params.id, req.user.sub]
+      'UPDATE expenses SET amount=$1, category=$2, date=$3, description=$4 WHERE id=$5',
+      [amount, category, date, description || category, req.params.id]
     );
     res.json({ success: true });
   } catch (err) {
@@ -158,7 +119,7 @@ app.put('/api/expenses/:id', async (req, res) => {
 // DELETE expense
 app.delete('/api/expenses/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM expenses WHERE id=$1 AND user_id=$2', [req.params.id, req.user.sub]);
+    await pool.query('DELETE FROM expenses WHERE id=$1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -168,7 +129,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
 // DELETE all expenses
 app.delete('/api/expenses', async (req, res) => {
   try {
-    await pool.query('DELETE FROM expenses WHERE user_id=$1', [req.user.sub]);
+    await pool.query('DELETE FROM expenses');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -184,7 +145,7 @@ app.post('/api/expenses/bulk', async (req, res) => {
     try {
       await pool.query(
         'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING',
-        [e.id, e.amount, e.category, e.date, e.description || e.category, e.payment || '', e.recurring ? 1 : 0, e.createdAt || new Date().toISOString(), req.user.sub]
+        [e.id, e.amount, e.category, e.date, e.description || e.category, e.payment || '', e.recurring ? 1 : 0, e.createdAt || new Date().toISOString(), 'default']
       );
       imported++;
     } catch (err) { /* skip duplicates or errors */ }
@@ -195,7 +156,7 @@ app.post('/api/expenses/bulk', async (req, res) => {
 // GET settings
 app.get('/api/settings', async (req, res) => {
   try {
-    const result = await pool.query('SELECT key, value FROM settings WHERE user_id = $1 OR user_id = $2', [req.user.sub, 'default']);
+    const result = await pool.query("SELECT key, value FROM settings WHERE user_id = 'default'");
     const settings = {};
     result.rows.forEach(row => {
       settings[row.key] = isNaN(row.value) ? row.value : Number(row.value);
@@ -213,13 +174,13 @@ app.put('/api/settings', async (req, res) => {
     if (budget !== undefined) {
       await pool.query(
         "INSERT INTO settings (user_id, key, value) VALUES ($1, 'budget', $2) ON CONFLICT (user_id, key) DO UPDATE SET value=$2", 
-        [req.user.sub, String(budget)]
+        ['default', String(budget)]
       );
     }
     if (currency !== undefined) {
       await pool.query(
         "INSERT INTO settings (user_id, key, value) VALUES ($1, 'currency', $2) ON CONFLICT (user_id, key) DO UPDATE SET value=$2", 
-        [req.user.sub, String(currency)]
+        ['default', String(currency)]
       );
     }
     res.json({ success: true });

@@ -29,97 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ===== Supabase Auth =====
-let supabase = null;
-let supabaseSession = null;
-
-async function setupAuth() {
-  try {
-    const res = await fetch(`${API}/config`);
-    const config = await res.json();
-    supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-    
-    const { data } = await supabase.auth.getSession();
-    supabaseSession = data.session;
-    
-    supabase.auth.onAuthStateChange((event, session) => {
-      supabaseSession = session;
-      if (session) {
-        document.getElementById('auth-screen').classList.add('hidden');
-        loadData().then(renderAll);
-      } else {
-        document.getElementById('auth-screen').classList.remove('hidden');
-      }
-    });
-
-    if (!supabaseSession) {
-      document.getElementById('auth-screen').classList.remove('hidden');
-    } else {
-      document.getElementById('auth-screen').classList.add('hidden');
-    }
-  } catch (err) {
-    console.error("Auth init failed:", err);
-  }
-
-  const emailInput = document.getElementById('auth-email');
-  const passInput = document.getElementById('auth-password');
-  const errorDiv = document.getElementById('auth-error');
-  const msgDiv = document.getElementById('auth-message');
-
-  document.getElementById('btn-login').addEventListener('click', async (e) => {
-    e.preventDefault();
-    errorDiv.textContent = ''; msgDiv.textContent = '';
-    if (!supabase) return errorDiv.textContent = 'System Error: Supabase is not connected. Please check API keys.';
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email: emailInput.value, password: passInput.value });
-      if (error) errorDiv.textContent = error.message;
-    } catch (err) { errorDiv.textContent = err.message; }
-  });
-
-  document.getElementById('btn-signup').addEventListener('click', async (e) => {
-    e.preventDefault();
-    errorDiv.textContent = ''; msgDiv.textContent = '';
-    if (!supabase) return alert('System Error: Supabase is not connected.');
-    
-    e.target.textContent = 'Creating...';
-    try {
-      const { error, data } = await supabase.auth.signUp({ email: emailInput.value, password: passInput.value });
-      if (error) alert("Error: " + error.message);
-      else if (data.user && data.user.identities && data.user.identities.length === 0) alert("Account already exists.");
-      else {
-        alert("Success! Check your email for a confirmation link. If you don't use real email, disable email confirmation in Supabase.");
-        msgDiv.textContent = "Success! Please check your email.";
-      }
-    } catch (err) { 
-      alert("Network Error: " + err.message); 
-    } finally {
-      e.target.textContent = 'Create Account';
-    }
-  });
-
-  document.getElementById('btn-signout').addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    expenses = [];
-    renderAll();
-  });
-}
-
-// Intercept fetch to add JWT
-const originalFetch = window.fetch;
-window.fetch = async function() {
-  let [resource, config] = arguments;
-  if(typeof resource === 'string' && resource.startsWith(API)) {
-    config = config || {};
-    config.headers = config.headers || {};
-    if(supabaseSession) {
-      config.headers['Authorization'] = `Bearer ${supabaseSession.access_token}`;
-    }
-  }
-  return originalFetch.apply(this, [resource, config]);
-};
-
 async function initApp() {
-  await setupAuth();
   setupDate();
   setupNavigation();
   setupForm();
@@ -127,12 +37,11 @@ async function initApp() {
   setupHistory();
   setupConfirmModal();
   setupBudgetAlert();
-  if(supabaseSession) {
-    await loadData();
-    setupCurrency();
-    applyCurrency();
-    renderAll();
-  }
+  
+  await loadData();
+  setupCurrency();
+  applyCurrency();
+  renderAll();
 }
 
 // ===== Helpers =====
