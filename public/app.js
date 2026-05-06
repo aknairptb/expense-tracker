@@ -9,12 +9,12 @@ const PAGE_SIZE = 10;
 let confirmCallback = null;
 
 const CATEGORY_COLORS = {
-  '🍔 Food & Dining': '#ff6b6b', '🚗 Transport': '#ffa502',
-  '🛒 Groceries': '#2dd4a0', '🎬 Entertainment': '#7c5cfc',
-  '💊 Health': '#ff5c7c', '🛍️ Shopping': '#e056a0',
-  '📱 Subscriptions': '#45b7d1', '🏠 Housing': '#96c93d',
-  '📚 Education': '#f7b731', '✈️ Travel': '#4b7bec',
-  '💡 Utilities': '#a55eea', '📦 Other': '#778ca3'
+  '🍔 Food & Dining': '#4caf89', '🚗 Transport': '#6b9fd4',
+  '🛒 Groceries': '#c9a96e', '🎬 Entertainment': '#a585d8',
+  '💊 Health': '#e06060', '🛍️ Shopping': '#d47ea8',
+  '📱 Subscriptions': '#5ab8c4', '🏠 Housing': '#d4885a',
+  '📚 Education': '#c9a96e', '✈️ Travel': '#6b9fd4',
+  '💡 Utilities': '#a585d8', '📦 Other': '#7a7870'
 };
 
 // ===== Init =====
