@@ -221,7 +221,6 @@ body {
 
 /* ===== Form Styles ===== */
 .form-container { display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; align-items: start; }
-.form-card { }
 .form-header { text-align: center; margin-bottom: 28px; }
 .form-icon {
   width: 56px; height: 56px; border-radius: 16px;
