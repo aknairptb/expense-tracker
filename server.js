@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { Pool } = require('pg');
-const jwt = require('jsonwebtoken');
+const { createClient } = require('@supabase/supabase-js');
 
 const PORT = process.env.PORT || 3000;
 
@@ -62,22 +62,34 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ===== Supabase Client =====
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+let supabase;
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient(supabaseUrl, supabaseAnonKey);
+}
+
 // ===== JWT Auth Middleware =====
-function verifyJWT(req, res, next) {
+async function verifyJWT(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
   }
   const token = authHeader.slice(7);
+  
+  if (!supabase) {
+    return res.status(500).json({ error: 'Supabase client not initialized on server' });
+  }
+
   try {
-    const secret = process.env.SUPABASE_JWT_SECRET;
-    if (!secret) throw new Error('SUPABASE_JWT_SECRET not configured');
-    const decoded = jwt.verify(token, secret);
-    req.userId = decoded.sub; // Supabase user UUID
-    req.userEmail = decoded.email;
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) throw error || new Error('No user found');
+    req.userId = user.id;
+    req.userEmail = user.email;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({ error: 'Invalid or expired token: ' + err.message });
   }
 }
 

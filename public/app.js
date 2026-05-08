@@ -257,10 +257,13 @@ function setupForm() {
 
     try {
       const res = await apiFetch(`${API}/expenses`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(expense) });
-      if (!res.ok) throw new Error('Database save failed');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${res.status}`);
+      }
       expenses.push(expense);
     } catch (err) {
-      showToast('Failed to save expense', 'error'); return;
+      showToast(`Failed: ${err.message}`, 'error'); return;
     }
     form.reset();
     document.getElementById('expense-date').value = new Date().toISOString().split('T')[0];
