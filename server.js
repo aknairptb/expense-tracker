@@ -96,7 +96,11 @@ app.get('/api/test-db', async (req, res) => {
   try {
     const client = await pool.connect();
     client.release();
-    res.json({ status: 'connected', dbUrl: (process.env.DATABASE_URL || '').substring(0, 20) + '...' });
+    res.json({ 
+      status: 'connected', 
+      dbUrl: (process.env.DATABASE_URL || '').substring(0, 20) + '...',
+      hasJwtSecret: !!process.env.SUPABASE_JWT_SECRET
+    });
   } catch (err) {
     res.status(500).json({ error: err.message, stack: err.stack, code: err.code });
   }
