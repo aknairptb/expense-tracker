@@ -91,6 +91,17 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Debug endpoint to test DB connection on Vercel
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    client.release();
+    res.json({ status: 'connected', dbUrl: (process.env.DATABASE_URL || '').substring(0, 20) + '...' });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack, code: err.code });
+  }
+});
+
 // ===== Protected API Routes (require JWT) =====
 
 // GET all expenses for this user
