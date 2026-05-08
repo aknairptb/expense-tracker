@@ -1,6 +1,6 @@
 {
-  "name": "ExpenseFlow",
-  "short_name": "ExpenseFlow",
+  "name": "Chilav Book",
+  "short_name": "Chilav Book",
   "description": "Track your personal expenses seamlessly.",
   "start_url": "/",
   "display": "standalone",

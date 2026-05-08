@@ -228,6 +228,6 @@ module.exports = app;
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`\n  ✨ ExpenseFlow server running at http://localhost:${PORT}\n`);
+    console.log(`\n  ✨ Chilav Book server running at http://localhost:${PORT}\n`);
   });
 }

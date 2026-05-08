@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expenseflow-v1';
+const CACHE_NAME = 'chilavbook-v1';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

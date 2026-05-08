@@ -316,7 +316,7 @@ function exportCSV() {
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `expenseflow_${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = `chilavbook_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
   showToast('CSV exported!');
 }
