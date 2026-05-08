@@ -1,3 +1,83 @@
+// ===== Supabase Auth =====
+let supabaseClient = null;
+let currentSession = null;
+
+async function loadSupabaseConfig() {
+  const res = await fetch('/api/config');
+  const { supabaseUrl, supabaseAnonKey } = await res.json();
+  supabaseClient = supabase.createClient(supabaseUrl, supabaseAnonKey);
+}
+
+async function initAuth() {
+  await loadSupabaseConfig();
+
+  // Handle OAuth redirect
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  currentSession = session;
+
+  // Listen for auth state changes
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    currentSession = session;
+  });
+
+  if (currentSession) {
+    showApp();
+  } else {
+    showAuthScreen();
+  }
+}
+
+function showAuthScreen() {
+  document.getElementById('auth-screen').classList.remove('hidden');
+}
+
+function showApp() {
+  document.getElementById('auth-screen').classList.add('hidden');
+  const user = currentSession.user;
+  // Set avatar
+  const avatar = document.getElementById('user-avatar');
+  const avatarUrl = user.user_metadata?.avatar_url;
+  if (avatarUrl) {
+    avatar.src = avatarUrl;
+    avatar.style.display = 'block';
+  }
+  document.getElementById('user-menu').style.display = 'flex';
+  initApp();
+}
+
+async function signInWithGoogle() {
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin }
+  });
+  if (error) errEl.textContent = error.message;
+}
+
+async function signOut() {
+  await supabaseClient.auth.signOut();
+  currentSession = null;
+  expenses = [];
+  settings = { budget: 0, currency: '₹' };
+  document.getElementById('user-menu').style.display = 'none';
+  showAuthScreen();
+}
+
+// Authenticated fetch wrapper
+async function apiFetch(url, options = {}) {
+  if (currentSession?.access_token) {
+    options.headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${currentSession.access_token}`
+    };
+  }
+  if (options.body && !options.headers?.['Content-Type']) {
+    options.headers = { ...options.headers, 'Content-Type': 'application/json' };
+  }
+  return fetch(url, options);
+}
+
 // ===== State & Storage =====
 const API = '/api';
 
@@ -19,8 +99,12 @@ const CATEGORY_COLORS = {
 
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
-  initApp();
-  
+  initAuth();
+
+  document.getElementById('btn-google-signin').addEventListener('click', signInWithGoogle);
+  document.getElementById('btn-signout').addEventListener('click', signOut);
+  document.getElementById('user-menu').style.display = 'none';
+
   // Register Service Worker for PWA
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(err => {
@@ -37,7 +121,7 @@ async function initApp() {
   setupHistory();
   setupConfirmModal();
   setupBudgetAlert();
-  
+
   await loadData();
   setupCurrency();
   applyCurrency();
@@ -48,10 +132,10 @@ async function initApp() {
 async function loadData() {
   try {
     const [expRes, setRes] = await Promise.all([
-      fetch(`${API}/expenses`), fetch(`${API}/settings`)
+      apiFetch(`${API}/expenses`), apiFetch(`${API}/settings`)
     ]);
-    expenses = await expRes.json();
-    settings = await setRes.json();
+    if (expRes.ok) expenses = await expRes.json();
+    if (setRes.ok) settings = await setRes.json();
   } catch (err) {
     console.warn('API unavailable, using empty data:', err.message);
   }
@@ -92,7 +176,7 @@ function setupCurrency() {
   sel.value = settings.currency || '₹';
   sel.addEventListener('change', async () => {
     settings.currency = sel.value;
-    await fetch(`${API}/settings`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(settings) });
+    await apiFetch(`${API}/settings`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(settings) });
     applyCurrency();
     renderAll();
   });
@@ -172,7 +256,7 @@ function setupForm() {
     };
 
     try {
-      await fetch(`${API}/expenses`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(expense) });
+      await apiFetch(`${API}/expenses`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(expense) });
       expenses.push(expense);
     } catch (err) {
       showToast('Failed to save expense', 'error'); return;
@@ -200,7 +284,7 @@ function setupSettings() {
 
   document.getElementById('btn-save-settings').addEventListener('click', async () => {
     settings.budget = parseFloat(document.getElementById('budget-input').value) || 0;
-    await fetch(`${API}/settings`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(settings) });
+    await apiFetch(`${API}/settings`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(settings) });
     modal.classList.remove('active');
     showToast('Settings saved!');
     renderAll();
@@ -213,7 +297,7 @@ function setupSettings() {
   document.getElementById('csv-file-input').addEventListener('change', importCSV);
   document.getElementById('btn-clear-data').addEventListener('click', () => {
     showConfirm('Clear All Data', 'Are you sure you want to delete ALL expenses? This cannot be undone.', async () => {
-      await fetch(`${API}/expenses`, { method: 'DELETE' });
+      await apiFetch(`${API}/expenses`, { method: 'DELETE' });
       expenses = [];
       modal.classList.remove('active');
       showToast('All data cleared');
@@ -266,7 +350,7 @@ async function saveEdit() {
     date: document.getElementById('edit-date').value,
     description: document.getElementById('edit-description').value || expenses[idx].category
   };
-  await fetch(`${API}/expenses/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(updated) });
+  await apiFetch(`${API}/expenses/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(updated) });
   Object.assign(expenses[idx], updated);
   document.getElementById('edit-modal').classList.remove('active');
   showToast('Expense updated!');
@@ -286,7 +370,7 @@ function openEdit(id) {
 
 function deleteExpense(id) {
   showConfirm('Delete Expense', 'Are you sure you want to delete this expense?', async () => {
-    await fetch(`${API}/expenses/${id}`, { method: 'DELETE' });
+    await apiFetch(`${API}/expenses/${id}`, { method: 'DELETE' });
     expenses = expenses.filter(e => e.id !== id);
     showToast('Expense deleted');
     renderAll();
@@ -718,7 +802,7 @@ function importCSV(e) {
         });
       }
       if (newExpenses.length) {
-        const res = await fetch(`${API}/expenses/bulk`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ expenses: newExpenses }) });
+        const res = await apiFetch(`${API}/expenses/bulk`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ expenses: newExpenses }) });
         const data = await res.json();
         expenses.push(...newExpenses);
         showToast(`${data.imported} expenses imported!`);

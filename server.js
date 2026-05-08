@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { Pool } = require('pg');
-const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
 
 const PORT = process.env.PORT || 3000;
 
@@ -20,7 +20,6 @@ const pool = new Pool({
 async function initDB() {
   const client = await pool.connect();
   try {
-    // Ensure expenses table exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS expenses (
         id VARCHAR(255) PRIMARY KEY,
@@ -30,30 +29,26 @@ async function initDB() {
         description TEXT,
         payment VARCHAR(255),
         recurring INTEGER DEFAULT 0,
-        created_at VARCHAR(255) NOT NULL
+        created_at VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) NOT NULL DEFAULT 'default'
       )
     `);
-    
-    // Add user_id column if missing
-    try { await client.query(`ALTER TABLE expenses ADD COLUMN user_id VARCHAR(255)`); } catch (e) {}
+    try { await client.query(`ALTER TABLE expenses ADD COLUMN user_id VARCHAR(255) NOT NULL DEFAULT 'default'`); } catch (e) {}
 
-    // Ensure settings table exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS settings (
-        key VARCHAR(255),
+        user_id VARCHAR(255) NOT NULL,
+        key VARCHAR(255) NOT NULL,
         value VARCHAR(255) NOT NULL,
-        user_id VARCHAR(255) DEFAULT 'default'
+        PRIMARY KEY (user_id, key)
       )
     `);
-
-    // Add user_id column if missing to settings and fix primary key
-    try { await client.query(`ALTER TABLE settings ADD COLUMN user_id VARCHAR(255) DEFAULT 'default'`); } catch (e) {}
-    try { 
+    try {
       await client.query(`ALTER TABLE settings DROP CONSTRAINT IF EXISTS settings_pkey`);
       await client.query(`ALTER TABLE settings ADD PRIMARY KEY (user_id, key)`);
     } catch (e) {}
 
-    console.log('✓ Cloud PostgreSQL Database connected and initialized with Auth schema');
+    console.log('✓ Cloud PostgreSQL connected and initialized');
   } catch (err) {
     console.error('Failed to initialize database tables:', err);
   } finally {
@@ -67,11 +62,44 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== Public API Routes =====
-// GET all expenses
-app.get('/api/expenses', async (req, res) => {
+// ===== JWT Auth Middleware =====
+function verifyJWT(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+  const token = authHeader.slice(7);
   try {
-    const result = await pool.query('SELECT * FROM expenses ORDER BY date DESC, created_at DESC');
+    const secret = process.env.SUPABASE_JWT_SECRET;
+    if (!secret) throw new Error('SUPABASE_JWT_SECRET not configured');
+    const decoded = jwt.verify(token, secret);
+    req.userId = decoded.sub; // Supabase user UUID
+    req.userEmail = decoded.email;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// ===== Public Routes =====
+
+// Frontend config — exposes only public Supabase keys
+app.get('/api/config', (req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
+  });
+});
+
+// ===== Protected API Routes (require JWT) =====
+
+// GET all expenses for this user
+app.get('/api/expenses', verifyJWT, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM expenses WHERE user_id = $1 ORDER BY date DESC, created_at DESC',
+      [req.userId]
+    );
     const rows = result.rows.map(row => ({
       id: row.id,
       amount: parseFloat(row.amount),
@@ -89,12 +117,12 @@ app.get('/api/expenses', async (req, res) => {
 });
 
 // POST new expense
-app.post('/api/expenses', async (req, res) => {
+app.post('/api/expenses', verifyJWT, async (req, res) => {
   const { id, amount, category, date, description, payment, recurring, createdAt } = req.body;
   try {
     await pool.query(
       'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-      [id, amount, category, date, description || category, payment || '', recurring ? 1 : 0, createdAt || new Date().toISOString(), 'default']
+      [id, amount, category, date, description || category, payment || '', recurring ? 1 : 0, createdAt || new Date().toISOString(), req.userId]
     );
     res.json({ success: true, id });
   } catch (err) {
@@ -102,13 +130,13 @@ app.post('/api/expenses', async (req, res) => {
   }
 });
 
-// PUT update expense
-app.put('/api/expenses/:id', async (req, res) => {
+// PUT update expense (only own)
+app.put('/api/expenses/:id', verifyJWT, async (req, res) => {
   const { amount, category, date, description } = req.body;
   try {
     await pool.query(
-      'UPDATE expenses SET amount=$1, category=$2, date=$3, description=$4 WHERE id=$5',
-      [amount, category, date, description || category, req.params.id]
+      'UPDATE expenses SET amount=$1, category=$2, date=$3, description=$4 WHERE id=$5 AND user_id=$6',
+      [amount, category, date, description || category, req.params.id, req.userId]
     );
     res.json({ success: true });
   } catch (err) {
@@ -116,20 +144,20 @@ app.put('/api/expenses/:id', async (req, res) => {
   }
 });
 
-// DELETE expense
-app.delete('/api/expenses/:id', async (req, res) => {
+// DELETE single expense (only own)
+app.delete('/api/expenses/:id', verifyJWT, async (req, res) => {
   try {
-    await pool.query('DELETE FROM expenses WHERE id=$1', [req.params.id]);
+    await pool.query('DELETE FROM expenses WHERE id=$1 AND user_id=$2', [req.params.id, req.userId]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE all expenses
-app.delete('/api/expenses', async (req, res) => {
+// DELETE all expenses for this user
+app.delete('/api/expenses', verifyJWT, async (req, res) => {
   try {
-    await pool.query('DELETE FROM expenses');
+    await pool.query('DELETE FROM expenses WHERE user_id=$1', [req.userId]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -137,7 +165,7 @@ app.delete('/api/expenses', async (req, res) => {
 });
 
 // POST bulk import
-app.post('/api/expenses/bulk', async (req, res) => {
+app.post('/api/expenses/bulk', verifyJWT, async (req, res) => {
   const { expenses: items } = req.body;
   if (!Array.isArray(items)) return res.status(400).json({ error: 'Expected array' });
   let imported = 0;
@@ -145,18 +173,21 @@ app.post('/api/expenses/bulk', async (req, res) => {
     try {
       await pool.query(
         'INSERT INTO expenses (id, amount, category, date, description, payment, recurring, created_at, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING',
-        [e.id, e.amount, e.category, e.date, e.description || e.category, e.payment || '', e.recurring ? 1 : 0, e.createdAt || new Date().toISOString(), 'default']
+        [e.id, e.amount, e.category, e.date, e.description || e.category, e.payment || '', e.recurring ? 1 : 0, e.createdAt || new Date().toISOString(), req.userId]
       );
       imported++;
-    } catch (err) { /* skip duplicates or errors */ }
+    } catch (err) { /* skip */ }
   }
   res.json({ success: true, imported });
 });
 
-// GET settings
-app.get('/api/settings', async (req, res) => {
+// GET settings for this user
+app.get('/api/settings', verifyJWT, async (req, res) => {
   try {
-    const result = await pool.query("SELECT key, value FROM settings WHERE user_id = 'default'");
+    const result = await pool.query(
+      'SELECT key, value FROM settings WHERE user_id = $1',
+      [req.userId]
+    );
     const settings = {};
     result.rows.forEach(row => {
       settings[row.key] = isNaN(row.value) ? row.value : Number(row.value);
@@ -167,20 +198,20 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// PUT settings
-app.put('/api/settings', async (req, res) => {
+// PUT settings for this user
+app.put('/api/settings', verifyJWT, async (req, res) => {
   const { budget, currency } = req.body;
   try {
     if (budget !== undefined) {
       await pool.query(
-        "INSERT INTO settings (user_id, key, value) VALUES ($1, 'budget', $2) ON CONFLICT (user_id, key) DO UPDATE SET value=$2", 
-        ['default', String(budget)]
+        'INSERT INTO settings (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value=$3',
+        [req.userId, 'budget', String(budget)]
       );
     }
     if (currency !== undefined) {
       await pool.query(
-        "INSERT INTO settings (user_id, key, value) VALUES ($1, 'currency', $2) ON CONFLICT (user_id, key) DO UPDATE SET value=$2", 
-        ['default', String(currency)]
+        'INSERT INTO settings (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value=$3',
+        [req.userId, 'currency', String(currency)]
       );
     }
     res.json({ success: true });
@@ -197,6 +228,6 @@ module.exports = app;
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`\n  ✨ Cloud-Ready ExpenseFlow server running at http://localhost:${PORT}\n`);
+    console.log(`\n  ✨ ExpenseFlow server running at http://localhost:${PORT}\n`);
   });
 }
